@@ -7,4 +7,4 @@ Pipeline for finding optimal gene expression thresholds using KS-test.
 pip install -r scripts/requirements.txt
 
 ## Author
-Your Name
+Samson Kosemani
