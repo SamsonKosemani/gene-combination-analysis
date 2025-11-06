@@ -1,0 +1,50 @@
+# --------- Single-Gene Threshold Optimization ---------
+library(dplyr)
+library(purrr)
+library(readr)
+library(ggplot2)
+
+# Load data
+expr_mat <- as.matrix(read.csv("data/expression_data.csv", row.names=1)) # samples x genes
+phenotype <- read.csv("data/phenotype.csv")$phenotype # phenotype vector
+
+# Function: Find best threshold for each gene
+best_threshold_for_gene <- function(expr, phenotype, thresholds = seq(0.2, 0.8, 0.1)) {
+  map_df(thresholds, function(t) {
+    cutoff <- quantile(expr, t)
+    group_high <- phenotype[expr >= cutoff]
+    group_low <- phenotype[expr < cutoff]
+    if (length(group_high) == 0 | length(group_low) == 0) return(NULL)
+    p <- tryCatch(ks.test(group_high, group_low)$p.value, error = function(e) NA)
+    tibble(threshold = t, p_value = p)
+  }) %>%
+    filter(!is.na(p_value)) %>%
+    arrange(p_value) %>%
+    slice(1)
+}
+
+# Apply for all genes
+results <- map_df(colnames(expr_mat), function(g) {
+  best <- best_threshold_for_gene(expr_mat[, g], phenotype)
+  tibble(gene = g,
+         best_threshold = best$threshold,
+         lowest_p = best$p_value)
+})
+results <- results %>% arrange(lowest_p)
+write_csv(results, "results/single_gene_results.csv")
+
+# Print result
+print(head(results, 10))
+
+# Plot for top gene
+gene <- results$gene[1]
+t <- results$best_threshold[1]
+cutoff <- quantile(expr_mat[,gene], t)
+group_high <- phenotype[expr_mat[,gene] >= cutoff]
+group_low <- phenotype[expr_mat[,gene] < cutoff]
+d <- tibble(value = c(group_high, group_low), 
+            group = rep(c("High", "Low"), c(length(group_high), length(group_low))))
+p <- ggplot(d, aes(x=value, fill=group)) +
+  geom_density(alpha=0.5) +
+  labs(title=sprintf("%s (t=%.2f, p=%.2e)", gene, t, results$lowest_p[1]))
+ggsave(sprintf("plots/single_gene/%s_KS.png", gene), p)
